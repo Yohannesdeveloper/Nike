@@ -595,10 +595,10 @@ function ScrollScene({ children, index, align, noFade }: { children: React.React
   const opacity = noFade ? 1 : (distance < 0.95 ? 1 : Math.max(0, (1 - distance) * 10));
 
   const containerClass = align === 'left'
-    ? 'items-center max-sm:items-start max-sm:pt-24 justify-start pl-[8%] sm:pl-[10%] md:pl-[15%] lg:pl-[18%] pr-[8%] sm:pr-0'
+    ? 'items-center max-sm:items-start max-sm:pt-24 justify-start pl-[16%] sm:pl-[20%] md:pl-[24%] lg:pl-[28%] pr-[8%] sm:pr-0'
     : align === 'right'
-    ? 'items-center max-sm:items-start max-sm:pt-24 justify-end pr-[8%] sm:pr-[10%] md:pr-[15%] lg:pr-[18%] pl-[8%] sm:pl-0'
-    : 'items-center justify-center px-[8%] sm:px-[10%] md:px-[15%] lg:px-[18%]';
+    ? 'items-center max-sm:items-start max-sm:pt-24 justify-end pr-[16%] sm:pr-[20%] md:pr-[24%] lg:pr-[28%] pl-[8%] sm:pl-0'
+    : 'items-center justify-center px-[10%] sm:px-[14%] md:px-[18%] lg:px-[20%]';
 
   const maxWidthClass = align === 'center' ? 'max-w-3xl' : 'max-w-[460px] max-sm:max-w-full';
 

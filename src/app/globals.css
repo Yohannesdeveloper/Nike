@@ -46,6 +46,10 @@ body {
   body {
     cursor: auto;
   }
+  canvas {
+    touch-action: pan-y !important;
+    pointer-events: none !important;
+  }
 }
 
 body::before {
