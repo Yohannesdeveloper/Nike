@@ -6,13 +6,63 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useStore } from '@/store/useStore';
 
+function getSceneAdjustments(width: number, height: number) {
+  const aspect = width / Math.max(height, 1);
+  const isMobile = width < 768;
+  const isPortrait = aspect < 1;
+
+  if (!isMobile) {
+    return { cameraXScale: 1, cameraZOffset: 0, cameraFovBoost: 0, shoeScale: 1, lookAtY: 0.1 };
+  }
+
+  if (isPortrait) {
+    return {
+      cameraXScale: 0.28,
+      cameraZOffset: 2.2,
+      cameraFovBoost: 10,
+      shoeScale: 0.72,
+      lookAtY: -0.05,
+    };
+  }
+
+  return {
+    cameraXScale: 0.5,
+    cameraZOffset: 1.4,
+    cameraFovBoost: 6,
+    shoeScale: 0.82,
+    lookAtY: 0.05,
+  };
+}
+
+function setPointerPosition(
+  clientX: number,
+  clientY: number,
+  setMousePosition: (pos: { x: number; y: number }) => void,
+) {
+  setMousePosition({
+    x: (clientX / window.innerWidth) * 2 - 1,
+    y: -(clientY / window.innerHeight) * 2 + 1,
+  });
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════════
    3D SCENE COMPONENTS
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 function Shoe() {
   const ref = useRef<THREE.Group>(null);
+  const scaleRef = useRef<THREE.Group>(null);
   const [model, setModel] = useState<THREE.Group | null>(null);
+  const { size } = useThree();
+  const adjustments = useMemo(
+    () => getSceneAdjustments(size.width, size.height),
+    [size.width, size.height],
+  );
+  const targetScale = useRef(adjustments.shoeScale);
+
+  useEffect(() => {
+    targetScale.current = adjustments.shoeScale;
+  }, [adjustments.shoeScale]);
 
   useEffect(() => {
     const loader = new GLTFLoader();
@@ -62,22 +112,38 @@ function Shoe() {
     const { mousePosition, scrollProgress } = useStore.getState();
     const t = state.clock.getElapsedTime();
 
+    if (scaleRef.current) {
+      const s = THREE.MathUtils.lerp(scaleRef.current.scale.x, targetScale.current, 0.08);
+      scaleRef.current.scale.setScalar(s);
+    }
+
     ref.current.position.y = Math.sin(t * 0.7) * 0.05 + Math.sin(t * 1.3) * 0.02;
 
     const bottomBlend = scrollProgress > 0.92 ? (scrollProgress - 0.92) / 0.08 : 0;
     const ease = bottomBlend * bottomBlend * (3 - 2 * bottomBlend);
+    const mobileDamp = size.width < 768 ? 0.35 : 1;
 
-    ref.current.rotation.y = scrollProgress * Math.PI * 2.2 * (1 - ease) + mousePosition.x * 0.6 * (1 - ease) + t * 0.04;
-    ref.current.rotation.x = mousePosition.y * 0.12 * (1 - ease);
+    ref.current.rotation.y = scrollProgress * Math.PI * 2.2 * (1 - ease) + mousePosition.x * 0.6 * (1 - ease) * mobileDamp + t * 0.04;
+    ref.current.rotation.x = mousePosition.y * 0.12 * (1 - ease) * mobileDamp;
   });
 
   if (!model) return null;
-  return <group ref={ref}><primitive object={model} /></group>;
+  return (
+    <group ref={scaleRef} scale={adjustments.shoeScale}>
+      <group ref={ref}>
+        <primitive object={model} />
+      </group>
+    </group>
+  );
 }
 
 function CameraRig() {
-  const { camera } = useThree();
+  const { camera, size } = useThree();
   const lookAt = useRef(new THREE.Vector3(0, 0.1, 0));
+  const adjustments = useMemo(
+    () => getSceneAdjustments(size.width, size.height),
+    [size.width, size.height],
+  );
   const kf = useMemo(() => [
     { p: [0, 0.3, 5.5] as const, f: 38 },
     { p: [2.5, 0.5, 4.2] as const, f: 36 },
@@ -101,9 +167,12 @@ function CameraRig() {
     const t = raw - i;
     const e = t * t * (3 - 2 * t);
     const a = kf[i], b = kf[Math.min(i + 1, n)];
-    const tp = new THREE.Vector3(a.p[0] + (b.p[0] - a.p[0]) * e, a.p[1] + (b.p[1] - a.p[1]) * e, a.p[2] + (b.p[2] - a.p[2]) * e);
-    const tl = new THREE.Vector3(0, 0.1, 0);
-    const tf = a.f + (b.f - a.f) * e;
+    const x = (a.p[0] + (b.p[0] - a.p[0]) * e) * adjustments.cameraXScale;
+    const y = a.p[1] + (b.p[1] - a.p[1]) * e;
+    const z = a.p[2] + (b.p[2] - a.p[2]) * e + adjustments.cameraZOffset;
+    const tp = new THREE.Vector3(x, y, z);
+    const tl = new THREE.Vector3(0, adjustments.lookAtY, 0);
+    const tf = a.f + (b.f - a.f) * e + adjustments.cameraFovBoost;
     camera.position.lerp(tp, 0.045);
     lookAt.current.lerp(tl, 0.045);
     camera.lookAt(lookAt.current);
@@ -175,12 +244,31 @@ function Trackers() {
       setScrollProgress(Math.min(top / sceneH, 1));
     };
     const onMouse = (e: MouseEvent) => {
-      setMousePosition({ x: (e.clientX / window.innerWidth) * 2 - 1, y: -(e.clientY / window.innerHeight) * 2 + 1 });
+      setPointerPosition(e.clientX, e.clientY, setMousePosition);
+    };
+    const onTouch = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+      setPointerPosition(touch.clientX, touch.clientY, setMousePosition);
+    };
+    const onOrientation = () => {
+      onScroll();
     };
     window.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('mousemove', onMouse);
+    window.addEventListener('touchstart', onTouch, { passive: true });
+    window.addEventListener('touchmove', onTouch, { passive: true });
+    window.addEventListener('orientationchange', onOrientation);
+    window.visualViewport?.addEventListener('resize', onOrientation);
     onScroll();
-    return () => { window.removeEventListener('scroll', onScroll); window.removeEventListener('mousemove', onMouse); };
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('mousemove', onMouse);
+      window.removeEventListener('touchstart', onTouch);
+      window.removeEventListener('touchmove', onTouch);
+      window.removeEventListener('orientationchange', onOrientation);
+      window.visualViewport?.removeEventListener('resize', onOrientation);
+    };
   }, [setScrollProgress, setMousePosition]);
   return null;
 }
@@ -196,16 +284,27 @@ function LoadingSpinner() {
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 export default function Page() {
+  const [canvasDpr, setCanvasDpr] = useState<[number, number]>([1, 1.5]);
+
+  useEffect(() => {
+    const updateDpr = () => {
+      setCanvasDpr(window.innerWidth < 768 ? [1, 1.25] : [1, 1.5]);
+    };
+    updateDpr();
+    window.addEventListener('resize', updateDpr);
+    return () => window.removeEventListener('resize', updateDpr);
+  }, []);
+
   return (
     <main className="relative bg-black">
       <Trackers />
 
       {/* Fixed 3D canvas */}
-      <div className="fixed inset-0 z-0">
+      <div className="fixed inset-0 z-0 h-[100dvh] w-full">
         <Canvas
           camera={{ position: [0, 0.3, 5.5], fov: 38 }}
           shadows
-          dpr={[1, 1.5]}
+          dpr={canvasDpr}
           gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.3, powerPreference: 'high-performance' }}
           onCreated={({ gl }) => gl.setClearColor('#000000')}
           style={{ width: '100%', height: '100%' }}
@@ -225,7 +324,7 @@ export default function Page() {
       {/* ─── SCROLL SCENES ─── */}
       <ScrollScene index={0} align="left">
         <span className="inline-block text-[10px] sm:text-[11px] font-semibold tracking-[0.35em] uppercase text-[#FFD700]/50 mb-4 sm:mb-6 p-1 sm:p-2">AIR JORDAN COLLECTION 2026</span>
-        <h1 className="text-6xl md:text-8xl lg:text-[8rem] font-black leading-[0.82] tracking-[-0.04em] mb-6 sm:mb-8 p-1 sm:p-2">
+        <h1 className="text-5xl sm:text-6xl md:text-8xl lg:text-[8rem] font-black leading-[0.82] tracking-[-0.04em] mb-6 sm:mb-8 p-1 sm:p-2">
           <span className="block">THE</span>
           <span className="block bg-gradient-to-r from-[#FFD700] via-[#FFA500] to-[#FFD700] bg-clip-text text-transparent">FUTURE</span>
           <span className="block">IS NOW</span>
@@ -233,13 +332,11 @@ export default function Page() {
         <p className="text-white/35 text-[13px] sm:text-[15px] md:text-base max-w-[280px] sm:max-w-[340px] leading-[1.7] mb-8 sm:mb-10 p-1 sm:p-2">
           Engineered for those who dare to push beyond. Experience performance redefined.
         </p>
-        <div className="flex gap-4 sm:gap-6 py-6 sm:py-8 px-4 sm:px-6 w-full max-w-2xl">
-          <button className="group relative flex-1 px-8 sm:px-10 md:px-12 py-6 sm:py-7 text-[11px] sm:text-[12px] font-bold tracking-[0.25em] uppercase text-black rounded-full overflow-hidden transition-all duration-500 hover:shadow-[0_0_60px_rgba(255,215,0,0.35)] hover:scale-105" style={{ background: 'linear-gradient(135deg, #FFD700, #FFA500)' }}>
+        <div className="btn-row max-w-2xl px-4 sm:px-6">
+          <button className="btn-primary flex-1 group">
             <span className="relative z-10">Shop Now</span>
           </button>
-          <button className="flex-1 px-8 sm:px-10 md:px-12 py-6 sm:py-7 text-[11px] sm:text-[12px] font-bold tracking-[0.25em] uppercase text-white/40 rounded-full border border-white/[0.08] hover:border-[#FFD700]/25 hover:text-[#FFD700] transition-all duration-500 hover:scale-105">
-            Explore
-          </button>
+          <button className="btn-secondary flex-1">Explore</button>
         </div>
       </ScrollScene>
 
@@ -252,10 +349,8 @@ export default function Page() {
         <p className="text-white/30 text-[12px] sm:text-[14px] mb-1 p-1 sm:p-2">Yellow Toe / Black</p>
         <p className="text-white/20 text-[11px] sm:text-[12px] mb-4 sm:mb-6 p-1 sm:p-2">US 7–14</p>
         <div className="text-2xl sm:text-3xl font-black text-[#FFD700] mb-6 sm:mb-8 p-1 sm:p-2" style={{ fontFamily: '"Space Grotesk", sans-serif' }}>$180</div>
-        <div className="w-full max-w-md py-6 sm:py-8">
-          <button className="w-full px-8 sm:px-10 py-6 sm:py-7 text-[11px] sm:text-[12px] font-bold tracking-[0.2em] uppercase text-black rounded-full hover:shadow-[0_0_50px_rgba(255,215,0,0.3)] transition-all duration-500 hover:scale-105" style={{ background: 'linear-gradient(135deg, #FFD700, #FFA500)' }}>
-            Add to Cart
-          </button>
+        <div className="btn-container max-w-md">
+          <button className="btn-primary w-full">Add to Cart</button>
         </div>
       </ScrollScene>
 
@@ -268,10 +363,8 @@ export default function Page() {
         <p className="text-white/30 text-[12px] sm:text-[14px] mb-1 p-1 sm:p-2">Military Black</p>
         <p className="text-white/20 text-[11px] sm:text-[12px] mb-4 sm:mb-6 p-1 sm:p-2">US 6–13</p>
         <div className="text-2xl sm:text-3xl font-black text-[#FFD700] mb-6 sm:mb-8 p-1 sm:p-2" style={{ fontFamily: '"Space Grotesk", sans-serif' }}>$210</div>
-        <div className="w-full max-w-md py-6 sm:py-8">
-          <button className="w-full px-8 sm:px-10 py-6 sm:py-7 text-[11px] sm:text-[12px] font-bold tracking-[0.2em] uppercase text-black rounded-full hover:shadow-[0_0_50px_rgba(255,215,0,0.3)] transition-all duration-500 hover:scale-105" style={{ background: 'linear-gradient(135deg, #FFD700, #FFA500)' }}>
-            Add to Cart
-          </button>
+        <div className="btn-container max-w-md">
+          <button className="btn-primary w-full">Add to Cart</button>
         </div>
       </ScrollScene>
 
@@ -284,10 +377,8 @@ export default function Page() {
         <p className="text-white/30 text-[12px] sm:text-[14px] mb-1 p-1 sm:p-2">Cap and Gown</p>
         <p className="text-white/20 text-[11px] sm:text-[12px] mb-4 sm:mb-6 p-1 sm:p-2">US 7–14</p>
         <div className="text-2xl sm:text-3xl font-black text-[#FFD700] mb-6 sm:mb-8 p-1 sm:p-2" style={{ fontFamily: '"Space Grotesk", sans-serif' }}>$225</div>
-        <div className="w-full max-w-md py-6 sm:py-8">
-          <button className="w-full px-8 sm:px-10 py-6 sm:py-7 text-[11px] sm:text-[12px] font-bold tracking-[0.2em] uppercase text-black rounded-full hover:shadow-[0_0_50px_rgba(255,215,0,0.3)] transition-all duration-500 hover:scale-105" style={{ background: 'linear-gradient(135deg, #FFD700, #FFA500)' }}>
-            Add to Cart
-          </button>
+        <div className="btn-container max-w-md">
+          <button className="btn-primary w-full">Add to Cart</button>
         </div>
       </ScrollScene>
 
@@ -361,10 +452,8 @@ export default function Page() {
         <p className="text-white/35 text-[13px] sm:text-[15px] max-w-[300px] sm:max-w-[380px] leading-[1.7] mb-10 sm:mb-12 p-1 sm:p-2">
           Step into the future. Limited quantity. Maximum impact.
         </p>
-        <div className="py-6 sm:py-8 px-4 sm:px-6 w-full max-w-lg">
-          <button className="w-full px-10 sm:px-12 md:px-14 py-7 sm:py-8 text-[12px] sm:text-[13px] font-bold tracking-[0.25em] uppercase text-black rounded-full hover:shadow-[0_0_80px_rgba(255,215,0,0.4)] transition-all duration-500 hover:scale-105" style={{ background: 'linear-gradient(135deg, #FFD700, #FFA500)' }}>
-            Buy Now — $180
-          </button>
+        <div className="btn-container max-w-lg px-4 sm:px-6">
+          <button className="btn-primary btn-primary-lg w-full">Buy Now — $180</button>
         </div>
       </ScrollScene>
 
@@ -436,9 +525,9 @@ export default function Page() {
           <span className="bg-gradient-to-r from-[#FFD700] to-[#FFA500] bg-clip-text text-transparent">MOVEMENT</span>
         </h2>
         <p className="text-white/30 text-[12px] sm:text-[14px] max-w-[280px] sm:max-w-[320px] leading-[1.7] mb-6 sm:mb-8 p-1 sm:p-2">First access to exclusive drops, new colorways, and member-only offers.</p>
-        <div className="pointer-events-auto flex flex-col sm:flex-row gap-4 sm:gap-5 max-w-lg sm:max-w-xl py-6 sm:py-8 px-4 sm:px-6">
-          <input type="email" placeholder="Enter your email" className="flex-1 px-5 sm:px-6 py-6 sm:py-6.5 text-[13px] sm:text-[14px] rounded-full bg-white/[0.03] border border-white/[0.06] text-white placeholder:text-white/18 focus:outline-none focus:border-[#FFD700]/25 focus:shadow-[0_0_20px_rgba(255,215,0,0.1)] transition-all duration-300" />
-          <button className="px-8 sm:px-10 py-6 sm:py-6.5 text-[11px] sm:text-[12px] font-bold tracking-[0.2em] uppercase text-black rounded-full hover:shadow-[0_0_40px_rgba(255,215,0,0.3)] transition-all duration-500 hover:scale-105 whitespace-nowrap" style={{ background: 'linear-gradient(135deg, #FFD700, #FFA500)' }}>Subscribe</button>
+        <div className="pointer-events-auto btn-row max-w-xl px-4 sm:px-6">
+          <input type="email" placeholder="Enter your email" className="input-gold flex-1" />
+          <button className="btn-primary whitespace-nowrap">Subscribe</button>
         </div>
         <p className="text-[9px] sm:text-[10px] text-white/10 mt-3 sm:mt-4 tracking-wider p-1 sm:p-2">No spam. Unsubscribe anytime.</p>
       </ScrollScene>
@@ -464,18 +553,18 @@ export default function Page() {
             </div>
           ))}
         </div>
-        <div className="pointer-events-auto space-y-4 sm:space-y-5 max-w-2xl mx-auto py-6 sm:py-8 px-4 sm:px-6">
-          <input placeholder="Your Name" className="w-full px-6 sm:px-7 py-5 sm:py-6 text-[13px] sm:text-[14px] rounded-xl bg-white/[0.025] border border-white/[0.05] text-white placeholder:text-white/18 focus:outline-none focus:border-[#FFD700]/30 focus:shadow-[0_0_20px_rgba(255,215,0,0.1)] transition-all duration-300" />
-          <input placeholder="Email Address" className="w-full px-6 sm:px-7 py-5 sm:py-6 text-[13px] sm:text-[14px] rounded-xl bg-white/[0.025] border border-white/[0.05] text-white placeholder:text-white/18 focus:outline-none focus:border-[#FFD700]/30 focus:shadow-[0_0_20px_rgba(255,215,0,0.1)] transition-all duration-300" />
-          <select className="w-full px-6 sm:px-7 py-5 sm:py-6 text-[13px] sm:text-[14px] rounded-xl bg-white/[0.025] border border-white/[0.05] text-white/30 focus:outline-none focus:border-[#FFD700]/30 focus:shadow-[0_0_20px_rgba(255,215,0,0.1)] transition-all duration-300 appearance-none">
+        <div className="pointer-events-auto btn-container max-w-2xl mx-auto px-4 sm:px-6 space-y-4 sm:space-y-5">
+          <input placeholder="Your Name" className="input-gold input-gold-square" />
+          <input placeholder="Email Address" className="input-gold input-gold-square" />
+          <select className="input-gold input-gold-square text-white/30 appearance-none">
             <option value="">Inquiry Type</option>
             <option value="order">Order Support</option>
             <option value="returns">Returns</option>
             <option value="wholesale">Wholesale</option>
             <option value="press">Press</option>
           </select>
-          <textarea rows={3} placeholder="Your Message" className="w-full px-6 sm:px-7 py-5 sm:py-6 text-[13px] sm:text-[14px] rounded-xl bg-white/[0.025] border border-white/[0.05] text-white placeholder:text-white/18 focus:outline-none focus:border-[#FFD700]/30 focus:shadow-[0_0_20px_rgba(255,215,0,0.1)] transition-all duration-300 resize-none" />
-          <button className="w-full px-10 sm:px-12 py-6 sm:py-7 text-[11px] sm:text-[12px] font-bold tracking-[0.2em] uppercase text-black rounded-xl hover:shadow-[0_0_40px_rgba(255,215,0,0.25)] transition-all duration-500 hover:scale-[1.02]" style={{ background: 'linear-gradient(135deg, #FFD700, #FFA500)' }}>Send Message</button>
+          <textarea rows={3} placeholder="Your Message" className="input-gold input-gold-square resize-none !min-h-[5.5rem] !rounded-xl py-4" />
+          <button className="btn-primary btn-primary-square w-full">Send Message</button>
         </div>
       </ScrollScene>
 
@@ -506,16 +595,16 @@ function ScrollScene({ children, index, align, noFade }: { children: React.React
   const opacity = noFade ? 1 : (distance < 0.95 ? 1 : Math.max(0, (1 - distance) * 10));
 
   const containerClass = align === 'left'
-    ? 'items-center justify-start pl-[10%] md:pl-[15%] lg:pl-[18%]'
+    ? 'items-center max-sm:items-start max-sm:pt-24 justify-start pl-[8%] sm:pl-[10%] md:pl-[15%] lg:pl-[18%] pr-[8%] sm:pr-0'
     : align === 'right'
-    ? 'items-center justify-end pr-[10%] md:pr-[15%] lg:pr-[18%]'
-    : 'items-center justify-center px-[10%] md:px-[15%] lg:px-[18%]';
+    ? 'items-center max-sm:items-start max-sm:pt-24 justify-end pr-[8%] sm:pr-[10%] md:pr-[15%] lg:pr-[18%] pl-[8%] sm:pl-0'
+    : 'items-center justify-center px-[8%] sm:px-[10%] md:px-[15%] lg:px-[18%]';
 
-  const maxWidthClass = align === 'center' ? 'max-w-3xl' : 'max-w-[460px]';
+  const maxWidthClass = align === 'center' ? 'max-w-3xl' : 'max-w-[460px] max-sm:max-w-full';
 
   return (
-      <div className={`relative h-screen w-full flex ${containerClass}`} style={{ opacity }}>
-      <div className={`${maxWidthClass} w-full`} style={{ fontFamily: '"Space Grotesk", sans-serif' }}>
+      <div className={`relative h-[100dvh] min-h-[100svh] w-full flex pointer-events-none ${containerClass}`} style={{ opacity }}>
+      <div className={`${maxWidthClass} w-full pointer-events-auto`} style={{ fontFamily: '"Space Grotesk", sans-serif' }}>
         {children}
       </div>
     </div>
@@ -530,20 +619,20 @@ function NavBar() {
   const scrollProgress = useStore((s) => s.scrollProgress);
   const isScrolled = scrollProgress > 0.92;
   return (
-    <nav className={`fixed top-0 left-0 right-0 z-20 transition-all duration-700 ${isScrolled ? 'bg-black/90 backdrop-blur-2xl border-b border-white/[0.04]' : 'bg-transparent'}`}>
-      <div className="flex items-center justify-between px-8 md:px-14 py-6">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full border border-white/15 flex items-center justify-center">
-            <div className="w-3 h-3 rounded-full bg-[#FFD700] shadow-[0_0_12px_rgba(255,215,0,0.4)]" />
+    <nav className={`fixed top-0 left-0 right-0 z-20 transition-all duration-700 ${isScrolled ? 'bg-black/90 backdrop-blur-2xl border-b border-white/[0.06] shadow-[0_8px_32px_rgba(0,0,0,0.4)]' : 'bg-transparent'}`}>
+      <div className="flex items-center justify-between px-5 sm:px-8 md:px-14 py-4 md:py-6">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 shrink-0 rounded-full border border-white/15 flex items-center justify-center shadow-[0_0_20px_rgba(255,215,0,0.08)]">
+            <div className="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-[#FFD700] shadow-[0_0_14px_rgba(255,215,0,0.55)]" />
           </div>
-          <span className="text-[13px] font-bold tracking-[0.18em] uppercase text-white/60">MOONDANCER</span>
+          <span className="text-[11px] sm:text-[13px] font-bold tracking-[0.18em] uppercase text-white/70 truncate">MOONDANCER</span>
         </div>
         <div className="hidden md:flex items-center gap-10">
           {['Collection', 'Technology', 'About', 'Contact'].map((item) => (
-            <span key={item} className="text-[11px] font-semibold tracking-[0.12em] uppercase text-white/30 hover:text-white/60 transition-colors duration-300 cursor-pointer">{item}</span>
+            <span key={item} className="nav-link text-[11px] font-semibold tracking-[0.12em] uppercase text-white/35 hover:text-[#FFD700]/80 transition-colors duration-300 cursor-pointer">{item}</span>
           ))}
         </div>
-        <button className="px-12 py-5 text-[12px] font-bold tracking-[0.15em] uppercase rounded-full border border-white/[0.08] text-white/40 hover:border-[#FFD700]/30 hover:text-[#FFD700] transition-all duration-300">Shop</button>
+        <button className="btn-nav">Shop</button>
       </div>
       <div className="h-[1px] bg-white/[0.03]">
         <div className="h-full transition-all duration-100" style={{ background: 'linear-gradient(90deg, #FFD700, #FFA500)', width: `${scrollProgress * 100}%` }} />
@@ -610,15 +699,13 @@ function FooterSection() {
           <div className="max-w-xl mx-auto text-center">
             <h5 className="text-[12px] sm:text-[13px] font-bold tracking-[0.2em] uppercase text-white/40 mb-3" style={{ fontFamily: '"Space Grotesk", sans-serif' }}>Stay Updated</h5>
             <p className="text-[11px] sm:text-[12px] text-white/20 mb-4 sm:mb-5">Get exclusive access to new releases and special offers.</p>
-            <div className="flex flex-col sm:flex-row gap-4 sm:gap-5 max-w-lg mx-auto">
-              <input 
-                type="email" 
-                placeholder="Enter your email" 
-                className="flex-1 px-5 sm:px-6 py-6 sm:py-6.5 text-[13px] sm:text-[14px] rounded-full bg-white/[0.03] border border-white/[0.06] text-white placeholder:text-white/18 focus:outline-none focus:border-[#FFD700]/30 focus:shadow-[0_0_20px_rgba(255,215,0,0.1)] transition-all duration-300"
+            <div className="btn-row max-w-lg mx-auto !py-0">
+              <input
+                type="email"
+                placeholder="Enter your email"
+                className="input-gold flex-1"
               />
-              <button className="px-8 sm:px-10 py-6 sm:py-6.5 text-[11px] sm:text-[12px] font-bold tracking-[0.2em] uppercase text-black rounded-full hover:shadow-[0_0_30px_rgba(255,215,0,0.25)] transition-all duration-500 hover:scale-105 whitespace-nowrap" style={{ background: 'linear-gradient(135deg, #FFD700, #FFA500)' }}>
-                Join
-              </button>
+              <button className="btn-primary whitespace-nowrap">Join</button>
             </div>
           </div>
         </div>

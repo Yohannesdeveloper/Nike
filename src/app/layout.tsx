@@ -1,10 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "MOONDANCER | Premium Sneaker Experience",
   description: "Immerse yourself in the future of footwear. A cinematic 3D journey through innovation, craftsmanship, and performance.",
   keywords: ["sneakers", "3D", "premium", "luxury", "footwear", "innovation"],
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

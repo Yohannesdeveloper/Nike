@@ -37,36 +37,26 @@ body {
   cursor: none;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  padding: 0.5rem;
-  margin: 0.5rem;
+  padding: 0;
+  margin: 0;
+  min-height: 100dvh;
 }
 
-@media (min-width: 640px) {
+@media (hover: none) and (pointer: coarse) {
   body {
-    padding: 0.75rem;
-    margin: 0.75rem;
+    cursor: auto;
   }
 }
 
-@media (min-width: 768px) {
-  body {
-    padding: 1rem;
-    margin: 1rem;
-  }
-}
-
-@media (min-width: 1024px) {
-  body {
-    padding: 1.25rem;
-    margin: 1.25rem;
-  }
-}
-
-@media (min-width: 1280px) {
-  body {
-    padding: 1.5rem;
-    margin: 1.5rem;
-  }
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background:
+    radial-gradient(ellipse 80% 50% at 20% 0%, rgba(255, 215, 0, 0.04) 0%, transparent 55%),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(255, 165, 0, 0.03) 0%, transparent 50%);
 }
 
 ::selection {
@@ -165,4 +155,237 @@ body {
 
 canvas {
   touch-action: none;
+}
+
+/* ─── Button system ─── */
+.btn-container {
+  width: 100%;
+  padding-block: clamp(0.75rem, 2vw, 1.25rem);
+}
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.75rem;
+  width: 100%;
+  padding-block: clamp(0.75rem, 2vw, 1.25rem);
+}
+
+.btn-row > .btn-primary,
+.btn-row > .btn-secondary {
+  flex: 1 1 10rem;
+}
+
+@media (max-width: 639px) {
+  .btn-row > .btn-primary,
+  .btn-row > .btn-secondary,
+  .btn-row > .input-gold {
+    flex: 1 1 100%;
+    width: 100%;
+  }
+}
+
+@media (min-width: 640px) {
+  .btn-row {
+    flex-wrap: nowrap;
+    gap: 1rem;
+  }
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding-block: 0.625rem;
+  padding-inline: clamp(1.5rem, 4vw, 2.25rem);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #000;
+  border: none;
+  border-radius: 9999px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ffd700 0%, #ffa500 45%, #ffd700 100%);
+  background-size: 200% auto;
+  box-shadow:
+    0 2px 16px rgba(255, 215, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  transition:
+    transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    box-shadow 0.4s ease,
+    background-position 0.6s ease;
+}
+
+@media (min-width: 640px) {
+  .btn-primary {
+    min-height: 3rem;
+    font-size: 0.6875rem;
+    padding-inline: clamp(1.75rem, 4vw, 2.5rem);
+  }
+}
+
+.btn-primary::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, 0.35) 50%, transparent 60%);
+  transform: translateX(-120%);
+  transition: transform 0.7s ease;
+}
+
+.btn-primary:hover {
+  background-position: right center;
+  transform: scale(1.02);
+  box-shadow:
+    0 0 40px rgba(255, 215, 0, 0.32),
+    0 4px 20px rgba(255, 165, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+.btn-primary:hover::after {
+  transform: translateX(120%);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding-block: 0.625rem;
+  padding-inline: clamp(1.5rem, 4vw, 2.25rem);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  border-radius: 9999px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  transition:
+    transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+    border-color 0.35s ease,
+    color 0.35s ease,
+    box-shadow 0.4s ease;
+}
+
+@media (min-width: 640px) {
+  .btn-secondary {
+    min-height: 3rem;
+    font-size: 0.6875rem;
+    padding-inline: clamp(1.75rem, 4vw, 2.5rem);
+  }
+}
+
+.btn-secondary:hover {
+  color: #ffd700;
+  border-color: rgba(255, 215, 0, 0.35);
+  transform: scale(1.02);
+  box-shadow: 0 0 28px rgba(255, 215, 0, 0.1);
+}
+
+.btn-nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.375rem;
+  padding-block: 0.5rem;
+  padding-inline: 1.75rem;
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.45);
+  border-radius: 9999px;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: all 0.35s ease;
+}
+
+.btn-nav:hover {
+  color: #ffd700;
+  border-color: rgba(255, 215, 0, 0.35);
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.15);
+}
+
+.btn-primary-lg {
+  min-height: 3rem;
+}
+
+@media (min-width: 640px) {
+  .btn-primary-lg {
+    min-height: 3.25rem;
+    font-size: 0.6875rem;
+  }
+}
+
+.btn-primary-square {
+  border-radius: 0.875rem;
+}
+
+.input-gold {
+  display: block;
+  width: 100%;
+  min-height: 2.75rem;
+  padding-block: 0.625rem;
+  padding-inline: clamp(1rem, 3vw, 1.5rem);
+  font-size: 0.75rem;
+  color: #fff;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+@media (min-width: 640px) {
+  .input-gold {
+    min-height: 3rem;
+    font-size: 0.8125rem;
+  }
+}
+
+.input-gold::placeholder {
+  color: rgba(255, 255, 255, 0.18);
+}
+
+.input-gold:focus {
+  outline: none;
+  border-color: rgba(255, 215, 0, 0.35);
+  box-shadow: 0 0 24px rgba(255, 215, 0, 0.12);
+}
+
+.input-gold-square {
+  border-radius: 0.875rem;
+}
+
+.nav-link {
+  position: relative;
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  width: 0;
+  height: 1px;
+  background: linear-gradient(90deg, #ffd700, #ffa500);
+  transition: width 0.35s ease;
+}
+
+.nav-link:hover::after {
+  width: 100%;
 }
